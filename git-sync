@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+
+import argparse
+import select
+import socket
+import subprocess
+import sys
+
+
+SOCKET_BUFFER_SIZE = 4096  # bytes
+SOCKET_TIMEOUT = 10.0      # seconds
+
+
+class ProcessManager(object):
+
+  def __init__(self):
+    self.stdout_r, self.stdout_w = socket.socketpair(type=socket.SOCK_DGRAM)
+    self.stderr_r, self.stderr_w = socket.socketpair(type=socket.SOCK_DGRAM)
+
+    self.stdout_r.settimeout(SOCKET_TIMEOUT)
+    self.stderr_r.settimeout(SOCKET_TIMEOUT)
+    self.stdout_w.settimeout(SOCKET_TIMEOUT)
+    self.stderr_w.settimeout(SOCKET_TIMEOUT)
+
+
+  def call(self, command, shell=False):
+    ret = subprocess.call(command, shell=shell,
+                          stdout=self.stdout_w, stderr=self.stderr_w)
+    if ret != 0:
+      raise RuntimeError(self.stderr_r.recv(SOCKET_BUFFER_SIZE).decode('utf-8'))
+
+    return self.stdout_r.recv(SOCKET_BUFFER_SIZE).decode('utf-8')
+
+
+def main(argv):
+
+  pman = ProcessManager()
+
+  remote_url = pman.call("git config --get remote.origin.url", shell=True)
+  host, path = [ s.strip() for s in remote_url.split(':') ]
+
+  branch = pman.call("git rev-parse --abbrev-ref HEAD", shell=True)
+  branch = branch.strip()
+
+  print("Synchronizing local branch '%s' onto %s:%s." %
+        (branch, host, path))
+
+  print(pman.call("ssh %s \"cd %s && git co HEAD@{0}\" 2>&1" % (host, path),
+        shell=True))
+  print(pman.call("git push --force origin 2>&1", shell=True))
+  print(pman.call("ssh %s \"cd %s && git co %s\" 2>&1" % (host, path, branch),
+                  shell=True))
+
+
+if __name__ == "__main__":
+  sys.exit(main(sys.argv))

@@ -77,6 +77,8 @@ def parse_command_line():
   parser = argparse.ArgumentParser()
   parser.add_argument("remote", nargs="?", default="origin",
                       help="The remote with which to synchronize with.")
+  parser.add_argument("-c", "--command",
+                      help="Shell command to run after sync.")
   return parser.parse_args()
 
 
@@ -94,6 +96,10 @@ def main(argv):
   print("%s%s" % (stdout, stderr))
 
   remote.run_command("git co %s" % branch)
+
+  if args.command:
+    stdout, stderr = remote.run_command(args.command)
+    print("%s%s" % (stdout, stderr))
 
 
 if __name__ == "__main__":

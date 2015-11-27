@@ -63,24 +63,33 @@ class Remote(object):
   def __init__(self, name):
     remote_url, _ = run_command("git config --get remote.%s.url" % name)
     self.host, self.path = [ s for s in remote_url.split(':') ]
+    self.name = name
 
   def __str__(self):
-    return "%s:%s" % (self.host, self.path)
+    return "'%s' at %s:%s" % (self.name, self.host, self.path)
 
   def run_command(self, command, shell=True):
     return run_command("ssh %s \"cd %s && %s\"" %
                        (self.host, self.path, command), shell=shell)
 
 
-def main(argv):
+def parse_command_line():
+  parser = argparse.ArgumentParser()
+  parser.add_argument("remote", nargs="?", default="origin",
+                      help="The remote with which to synchronize with.")
+  return parser.parse_args()
 
-  remote = Remote("origin")
+
+def main(argv):
+  args = parse_command_line()
+
+  remote = Remote(args.remote)
   branch, _ = run_command("git rev-parse --abbrev-ref HEAD")
 
-  print("Synchronizing local branch '%s' onto %s." % (branch, remote))
+  print("Synchronizing local branch '%s' onto remote %s." % (branch, remote))
 
   remote.run_command("git co HEAD@{0}")
-  stdout, stderr = run_command("git push --force origin")
+  stdout, stderr = run_command("git push --force %s" % args.remote)
 
   print("%s%s" % (stdout, stderr))
 

@@ -76,7 +76,8 @@ class Remote(object):
 def parse_command_line():
   parser = argparse.ArgumentParser()
   parser.add_argument("remote", nargs="?", default="origin",
-                      help="The remote with which to synchronize with.")
+                      help="The remote with which to synchronize with. "
+                           "If left unspecified, the 'origin' remote is used.")
   parser.add_argument("-c", "--command",
                       help="Shell command to run after sync.")
   return parser.parse_args()

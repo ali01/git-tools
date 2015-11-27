@@ -8,48 +8,83 @@ import sys
 
 
 SOCKET_BUFFER_SIZE = 4096  # bytes
-SOCKET_TIMEOUT = 10.0      # seconds
+SOCKET_TIMEOUT = 5.0       # seconds
 
 
-class ProcessManager(object):
-
+class CallReturnValue(object):
   def __init__(self):
-    self.stdout_r, self.stdout_w = socket.socketpair(type=socket.SOCK_DGRAM)
-    self.stderr_r, self.stderr_w = socket.socketpair(type=socket.SOCK_DGRAM)
+    self.status = 0
+    self.stdout, self.stdout_r = socket.socketpair(type=socket.SOCK_DGRAM)
+    self.stderr, self.stderr_r = socket.socketpair(type=socket.SOCK_DGRAM)
 
+    self.stdout.settimeout(SOCKET_TIMEOUT)
+    self.stderr.settimeout(SOCKET_TIMEOUT)
     self.stdout_r.settimeout(SOCKET_TIMEOUT)
     self.stderr_r.settimeout(SOCKET_TIMEOUT)
-    self.stdout_w.settimeout(SOCKET_TIMEOUT)
-    self.stderr_w.settimeout(SOCKET_TIMEOUT)
+
+  def __del__(self):
+    self.stdout.close()
+    self.stderr.close()
+    self.stdout_r.close()
+    self.stderr_r.close()
+
+  def read(self):
+    out_str, err_str = "", ""
+    while True:
+      rl, _, _ = select.select([self.stdout_r, self.stderr_r], [], [], 0.0)
+      if len(rl) == 0:
+        break
+
+      ret = rl[0].recv(SOCKET_BUFFER_SIZE).decode('utf-8')
+
+      if rl[0] == self.stdout_r:
+        out_str += ret
+
+      else:
+        err_str += ret
+
+    return out_str.strip(), err_str.strip()
 
 
-  def call(self, command, shell=False):
-    ret = subprocess.call(command, shell=shell,
-                          stdout=self.stdout_w, stderr=self.stderr_w)
-    if ret != 0:
-      raise RuntimeError(self.stderr_r.recv(SOCKET_BUFFER_SIZE).decode('utf-8'))
+def run_command(*arg, shell=True):
+  ret = CallReturnValue()
+  ret.status = subprocess.call(*arg, shell=shell,
+                               stdout=ret.stdout, stderr=ret.stderr)
+  stdout, stderr = ret.read()
 
-    return self.stdout_r.recv(SOCKET_BUFFER_SIZE).decode('utf-8')
+  if ret.status != 0:
+    raise RuntimeError(stderr)
+
+  return stdout, stderr
+
+
+class Remote(object):
+
+  def __init__(self, name):
+    remote_url, _ = run_command("git config --get remote.%s.url" % name)
+    self.host, self.path = [ s for s in remote_url.split(':') ]
+
+  def __str__(self):
+    return "%s:%s" % (self.host, self.path)
+
+  def run_command(self, command, shell=True):
+    return run_command("ssh %s \"cd %s && %s\"" %
+                       (self.host, self.path, command), shell=shell)
 
 
 def main(argv):
 
-  pman = ProcessManager()
+  remote = Remote("origin")
+  branch, _ = run_command("git rev-parse --abbrev-ref HEAD")
 
-  remote_url = pman.call("git config --get remote.origin.url", shell=True)
-  host, path = [ s.strip() for s in remote_url.split(':') ]
+  print("Synchronizing local branch '%s' onto %s." % (branch, remote))
 
-  branch = pman.call("git rev-parse --abbrev-ref HEAD", shell=True)
-  branch = branch.strip()
+  remote.run_command("git co HEAD@{0}")
+  stdout, stderr = run_command("git push --force origin")
 
-  print("Synchronizing local branch '%s' onto %s:%s." %
-        (branch, host, path))
+  print("%s%s" % (stdout, stderr))
 
-  print(pman.call("ssh %s \"cd %s && git co HEAD@{0}\" 2>&1" % (host, path),
-        shell=True))
-  print(pman.call("git push --force origin 2>&1", shell=True))
-  print(pman.call("ssh %s \"cd %s && git co %s\" 2>&1" % (host, path, branch),
-                  shell=True))
+  remote.run_command("git co %s" % branch)
 
 
 if __name__ == "__main__":

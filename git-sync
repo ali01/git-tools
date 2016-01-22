@@ -89,10 +89,14 @@ def main(argv):
   remote = Remote(args.remote)
   branch, _ = run_command("git rev-parse --abbrev-ref HEAD")
 
+  if branch == 'master':
+    print("Cannot synchronize master branch.", file=sys.stderr)
+    return -1
+
   print("Synchronizing local branch '%s' onto remote %s." % (branch, remote))
 
   remote.run_command("git co HEAD@{0}")
-  stdout, stderr = run_command("git push --force %s" % args.remote)
+  stdout, stderr = run_command("git push --force %s %s" % (args.remote, branch))
 
   print("%s%s" % (stdout, stderr))
 

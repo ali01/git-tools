@@ -2,66 +2,17 @@
 
 import argparse
 import select
-import socket
 import subprocess
 import sys
 
-
-SOCKET_BUFFER_SIZE = 4096  # bytes
-SOCKET_TIMEOUT = 5.0       # seconds
-
-
-class CallReturnValue(object):
-  def __init__(self):
-    self.status = 0
-    self.stdout, self.stdout_r = socket.socketpair(type=socket.SOCK_DGRAM)
-    self.stderr, self.stderr_r = socket.socketpair(type=socket.SOCK_DGRAM)
-
-    self.stdout.settimeout(SOCKET_TIMEOUT)
-    self.stderr.settimeout(SOCKET_TIMEOUT)
-    self.stdout_r.settimeout(SOCKET_TIMEOUT)
-    self.stderr_r.settimeout(SOCKET_TIMEOUT)
-
-  def __del__(self):
-    self.stdout.close()
-    self.stderr.close()
-    self.stdout_r.close()
-    self.stderr_r.close()
-
-  def read(self):
-    out_str, err_str = "", ""
-    while True:
-      rl, _, _ = select.select([self.stdout_r, self.stderr_r], [], [], 0.0)
-      if len(rl) == 0:
-        break
-
-      ret = rl[0].recv(SOCKET_BUFFER_SIZE).decode('utf-8')
-
-      if rl[0] == self.stdout_r:
-        out_str += ret
-
-      else:
-        err_str += ret
-
-    return out_str.strip(), err_str.strip()
-
-
 def run_command(*arg, shell=True):
-  ret = CallReturnValue()
-  ret.status = subprocess.call(*arg, shell=shell,
-                               stdout=ret.stdout, stderr=ret.stderr)
-  stdout, stderr = ret.read()
-
-  if ret.status != 0:
-    raise RuntimeError(stderr)
-
-  return stdout, stderr
+  stdout = subprocess.check_output(*arg, shell=shell, stderr=subprocess.STDOUT)
+  return stdout.decode('utf-8').strip()
 
 
 class Remote(object):
-
   def __init__(self, name):
-    remote_url, _ = run_command("git config --get remote.%s.url" % name)
+    remote_url = run_command("git config --get remote.%s.url" % name)
     self.host, self.path = [ s for s in remote_url.split(':') ]
     self.name = name
 
@@ -87,7 +38,7 @@ def main(argv):
   args = parse_command_line()
 
   remote = Remote(args.remote)
-  branch, _ = run_command("git rev-parse --abbrev-ref HEAD")
+  branch = run_command("git rev-parse --abbrev-ref HEAD")
 
   if branch == 'master':
     print("Cannot synchronize master branch.", file=sys.stderr)
@@ -96,15 +47,12 @@ def main(argv):
   print("Synchronizing local branch '%s' onto remote %s." % (branch, remote))
 
   remote.run_command("git co HEAD@{0}")
-  stdout, stderr = run_command("git push --force %s %s" % (args.remote, branch))
-
-  print("%s%s" % (stdout, stderr))
+  print(run_command("git push --force %s %s" % (args.remote, branch)))
 
   remote.run_command("git co %s" % branch)
 
   if args.command:
-    stdout, stderr = remote.run_command(args.command)
-    print("%s%s" % (stdout, stderr))
+    print(remote.run_command(args.command))
 
 
 if __name__ == "__main__":

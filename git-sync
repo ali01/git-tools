@@ -26,8 +26,8 @@ class Remote(object):
 
 def parse_command_line():
   parser = argparse.ArgumentParser()
-  parser.add_argument("remote", nargs="?", default="origin",
-                      help="The remote with which to synchronize with. "
+  parser.add_argument("remotes", nargs="*", default=["origin"],
+                      help="The remotes with which to synchronize with. "
                            "If left unspecified, the 'origin' remote is used.")
   parser.add_argument("-c", "--command",
                       help="Shell command to run after sync.")
@@ -37,22 +37,23 @@ def parse_command_line():
 def main(argv):
   args = parse_command_line()
 
-  remote = Remote(args.remote)
-  branch = run_command("git rev-parse --abbrev-ref HEAD")
+  for remote_name in args.remotes:
+    remote = Remote(remote_name)
+    branch = run_command("git rev-parse --abbrev-ref HEAD")
 
-  if branch == 'master':
-    print("Cannot synchronize master branch.", file=sys.stderr)
-    return -1
+    if branch == 'master':
+      print("Cannot synchronize master branch.", file=sys.stderr)
+      return -1
 
-  print("Synchronizing local branch '%s' onto remote %s." % (branch, remote))
+    print("Synchronizing local branch '%s' onto remote %s." % (branch, remote))
 
-  remote.run_command("git co HEAD@{0}")
-  print(run_command("git push --force %s %s" % (args.remote, branch)))
+    remote.run_command("git co HEAD@{0}")
+    print(run_command("git push --force %s %s:%s" %
+                      (remote_name, branch, branch)))
+    remote.run_command("git co %s" % branch)
 
-  remote.run_command("git co %s" % branch)
-
-  if args.command:
-    print(remote.run_command(args.command))
+    if args.command:
+      print(remote.run_command(args.command))
 
 
 if __name__ == "__main__":

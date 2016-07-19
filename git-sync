@@ -15,7 +15,7 @@ class Remote(object):
   def __str__(self):
     return "'%s' at %s:%s" % (self.name, self.host, self.path)
 
-  def util.run_command(self, command, shell=True):
+  def run_command(self, command, shell=True):
     return util.run_command("ssh %s \"cd %s && %s\"" %
                             (self.host, self.path, command), shell=shell)
 
@@ -43,13 +43,13 @@ def main(argv):
 
     print("Synchronizing local branch '%s' onto remote %s." % (branch, remote))
 
-    remote.util.run_command("git co HEAD@{0}")
+    remote.run_command("git co HEAD@{0}")
     print(util.run_command("git push --force %s %s:%s" %
                            (remote_name, branch, branch)))
-    remote.util.run_command("git co %s" % branch)
+    remote.run_command("git co %s" % branch)
 
     if args.command:
-      print(remote.util.run_command(args.command))
+      print(remote.run_command(args.command))
 
 
 if __name__ == "__main__":

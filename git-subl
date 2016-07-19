@@ -11,4 +11,4 @@ if __name__ == '__main__':
   paths_str = util.run_command('git show --stat --pretty=format: --name-only')
   paths = [ os.path.join(repo_dir, x) for x in  paths_str.split('\n')]
   for path in paths:
-    util.run_command('subl %s' % path)
+    util.run_command('subl -a %s' % path)

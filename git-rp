@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""
+git-rp (recursive push) - Push to main repository and all subtrees
+
+This script pushes changes to both the main repository and any configured git subtrees
+in a single command. It reads subtree configuration from your .git/config file.
+
+Setup:
+------
+Add subtree configuration to your .git/config file for each subtree in your repository:
+
+    [subtree "path/to/subtree/dir"]
+        url = https://github.com/user/repo.git
+        branch = main
+
+Where:
+- "path/to/subtree/dir" is the relative path to the subtree directory in your repository
+- url is the remote repository URL for the subtree
+- branch is the target branch in the subtree repository (defaults to 'main' if not specified)
+
+Usage:
+------
+    git-rp                    # Push current branch to origin and all subtrees
+    git-rp -b feature-branch  # Push specific branch
+    git-rp -f                 # Force push
+    git-rp -n                 # Dry run - show what would be pushed
+
+Example .git/config:
+--------------------
+    [core]
+        repositoryformatversion = 0
+        filemode = true
+    [remote "origin"]
+        url = git@github.com:myuser/main-repo.git
+        fetch = +refs/heads/*:refs/remotes/origin/*
+    [subtree "lib/shared-library"]
+        url = git@github.com:myuser/shared-library.git
+        branch = main
+    [subtree "vendor/third-party"]
+        url = https://github.com/other/third-party.git
+        branch = master
+
+This configuration would push to:
+1. The main repository (origin)
+2. The shared-library subtree at lib/shared-library
+3. The third-party subtree at vendor/third-party
+"""
+
+import argparse
+import configparser
+import os
+import re
+import subprocess
+import sys
+
+import util
+
+
+def parse_command_line():
+    parser = argparse.ArgumentParser(description="Recursively push to main repository and all subtrees")
+    parser.add_argument("-b", "--branch", 
+                        help="Branch to push (default: current branch)")
+    parser.add_argument("-f", "--force", action="store_true",
+                        help="Force push")
+    parser.add_argument("-n", "--dry-run", action="store_true",
+                        help="Show what would be pushed without actually pushing")
+    return parser.parse_args()
+
+
+def get_current_branch():
+    return util.run_command("git rev-parse --abbrev-ref HEAD")
+
+
+def get_subtrees_from_config():
+    """Parse .git/config to find all subtree configurations"""
+    config_path = os.path.join(".git", "config")
+    if not os.path.exists(config_path):
+        print("Error: Not in a git repository", file=sys.stderr)
+        sys.exit(1)
+    
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    
+    subtrees = []
+    for section in config.sections():
+        match = re.match(r'^subtree "(.*)"$', section)
+        if match:
+            path = match.group(1)
+            if 'url' in config[section]:
+                subtrees.append({
+                    'path': path,
+                    'url': config[section]['url'],
+                    'branch': config[section].get('branch', 'main')
+                })
+    
+    return subtrees
+
+
+def push_main_repo(branch, force=False, dry_run=False):
+    """Push the main repository"""
+    cmd = ["git", "push"]
+    if force:
+        cmd.append("--force")
+    cmd.extend(["origin", branch])
+    
+    if dry_run:
+        print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
+        return True
+    
+    return subprocess.run(cmd).returncode == 0
+
+
+def push_subtree(subtree, branch, force=False, dry_run=False):
+    """Push a single subtree"""
+    path = subtree['path']
+    url = subtree['url']
+    subtree_branch = subtree['branch']
+    
+    print(f"\nPushing subtree '{path}' to {url} (branch: {subtree_branch})...")
+    
+    if force:
+        # git subtree doesn't support --force directly, need to use push --force
+        if dry_run:
+            print(f"[DRY RUN] Would execute: git subtree split --prefix={path}")
+            print(f"[DRY RUN] Would execute: git push --force {url} <split-commit>:{subtree_branch}")
+            return True
+        
+        # Get the split commit - need to capture stdout only, not stderr
+        split_cmd = ["git", "subtree", "split", f"--prefix={path}"]
+        result = subprocess.run(split_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Error splitting subtree: {result.stderr}", file=sys.stderr)
+            return False
+        split_commit = result.stdout.strip()
+        
+        # Push with force
+        cmd = ["git", "push", "--force", url, f"{split_commit}:{subtree_branch}"]
+        return subprocess.run(cmd).returncode == 0
+    else:
+        # Normal subtree push
+        cmd = ["git", "subtree", "push", f"--prefix={path}", url, subtree_branch]
+        
+        if dry_run:
+            print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
+            return True
+        
+        return subprocess.run(cmd).returncode == 0
+
+
+def main(argv):
+    args = parse_command_line()
+    
+    # Get current branch if not specified
+    branch = args.branch or get_current_branch()
+    
+    # Get subtree configurations
+    subtrees = get_subtrees_from_config()
+    
+    # Push main repository
+    if not push_main_repo(branch, args.force, args.dry_run):
+        return 1
+    
+    # Push all subtrees
+    for subtree in subtrees:
+        if not push_subtree(subtree, branch, args.force, args.dry_run):
+            return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

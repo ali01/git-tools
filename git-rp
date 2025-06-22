@@ -73,8 +73,10 @@ def get_current_branch():
 
 def get_subtrees_from_config():
     """Parse .git/config to find all subtree configurations"""
-    config_path = os.path.join(".git", "config")
-    if not os.path.exists(config_path):
+    try:
+        git_dir = util.run_command("git rev-parse --git-dir")
+        config_path = os.path.join(git_dir, "config")
+    except subprocess.CalledProcessError:
         print("Error: Not in a git repository", file=sys.stderr)
         sys.exit(1)
     
@@ -96,7 +98,7 @@ def get_subtrees_from_config():
     return subtrees
 
 
-def push_main_repo(branch, force=False, dry_run=False):
+def push_main_repo(branch, force=False, dry_run=False, cwd=None):
     """Push the main repository"""
     cmd = ["git", "push"]
     if force:
@@ -107,10 +109,10 @@ def push_main_repo(branch, force=False, dry_run=False):
         print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
         return True
     
-    return subprocess.run(cmd).returncode == 0
+    return subprocess.run(cmd, cwd=cwd).returncode == 0
 
 
-def push_subtree(subtree, branch, force=False, dry_run=False):
+def push_subtree(subtree, branch, force=False, dry_run=False, cwd=None):
     """Push a single subtree"""
     path = subtree['path']
     url = subtree['url']
@@ -127,7 +129,7 @@ def push_subtree(subtree, branch, force=False, dry_run=False):
         
         # Get the split commit - need to capture stdout only, not stderr
         split_cmd = ["git", "subtree", "split", f"--prefix={path}"]
-        result = subprocess.run(split_cmd, capture_output=True, text=True)
+        result = subprocess.run(split_cmd, capture_output=True, text=True, cwd=cwd)
         if result.returncode != 0:
             print(f"Error splitting subtree: {result.stderr}", file=sys.stderr)
             return False
@@ -135,7 +137,7 @@ def push_subtree(subtree, branch, force=False, dry_run=False):
         
         # Push with force
         cmd = ["git", "push", "--force", url, f"{split_commit}:{subtree_branch}"]
-        return subprocess.run(cmd).returncode == 0
+        return subprocess.run(cmd, cwd=cwd).returncode == 0
     else:
         # Normal subtree push
         cmd = ["git", "subtree", "push", f"--prefix={path}", url, subtree_branch]
@@ -144,11 +146,18 @@ def push_subtree(subtree, branch, force=False, dry_run=False):
             print(f"[DRY RUN] Would execute: {' '.join(cmd)}")
             return True
         
-        return subprocess.run(cmd).returncode == 0
+        return subprocess.run(cmd, cwd=cwd).returncode == 0
 
 
 def main(argv):
     args = parse_command_line()
+    
+    # Get repository root for git subtree commands
+    try:
+        repo_root = util.run_command("git rev-parse --show-toplevel")
+    except subprocess.CalledProcessError:
+        print("Error: Not in a git repository", file=sys.stderr)
+        return 1
     
     # Get current branch if not specified
     branch = args.branch or get_current_branch()
@@ -157,12 +166,12 @@ def main(argv):
     subtrees = get_subtrees_from_config()
     
     # Push main repository
-    if not push_main_repo(branch, args.force, args.dry_run):
+    if not push_main_repo(branch, args.force, args.dry_run, cwd=repo_root):
         return 1
     
     # Push all subtrees
     for subtree in subtrees:
-        if not push_subtree(subtree, branch, args.force, args.dry_run):
+        if not push_subtree(subtree, branch, args.force, args.dry_run, cwd=repo_root):
             return 1
     
     return 0

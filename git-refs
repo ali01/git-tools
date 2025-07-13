@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+
+# ANSI color codes
+RED = '\033[91m'
+CYAN = '\033[96m'
+RESET = '\033[0m'
+
+def get_current_commit():
+    """Get the current commit SHA."""
+    try:
+        result = subprocess.run(['git', 'rev-parse', 'HEAD'], 
+                              capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        print("Error: Not in a git repository", file=sys.stderr)
+        sys.exit(1)
+
+def get_refs_for_commit(commit_sha):
+    """Get all refs pointing to a specific commit."""
+    try:
+        result = subprocess.run(['git', 'for-each-ref', '--points-at', commit_sha, 
+                               '--format=%(refname:short)%(refname)'],
+                              capture_output=True, text=True, check=True)
+        
+        local_refs = []
+        remote_refs = []
+        
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            
+            # Split the short name and full name
+            parts = line.split('refs/')
+            if len(parts) < 2:
+                continue
+                
+            short_name = parts[0]
+            full_ref = 'refs/' + parts[1]
+            
+            if full_ref.startswith('refs/heads/'):
+                local_refs.append(short_name)
+            elif full_ref.startswith('refs/remotes/'):
+                remote_refs.append(short_name)
+        
+        return local_refs, remote_refs
+    except subprocess.CalledProcessError as e:
+        print(f"Error getting refs: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def colorize_ref(ref):
+    """Apply color to a ref based on whether it's main/master or not."""
+    if ref.endswith('main') or ref.endswith('master'):
+        return f"{RED}{ref}{RESET}"
+    else:
+        return f"{CYAN}{ref}{RESET}"
+
+def main():
+    commit_sha = get_current_commit()
+    local_refs, remote_refs = get_refs_for_commit(commit_sha)
+    
+    print(f"Refs pointing to {commit_sha[:8]}:")
+    print()
+    
+    if local_refs:
+        print("Local refs:")
+        for ref in sorted(local_refs):
+            print(f"  {colorize_ref(ref)}")
+    else:
+        print("Local refs: (none)")
+    
+    print()
+    
+    if remote_refs:
+        print("Remote refs:")
+        for ref in sorted(remote_refs):
+            print(f"  {colorize_ref(ref)}")
+    else:
+        print("Remote refs: (none)")
+
+if __name__ == "__main__":
+    main()

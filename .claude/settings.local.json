@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(rm:*)",
+      "Bash(source:*)",
+      "Bash(python -m pytest tests/test_git_rp.py::TestBasicFunctionality::test_get_current_branch -v)",
+      "Bash(python -m pytest tests/test_git_rp.py -v --tb=line)",
+      "Bash(python -m pytest tests/test_git_rp.py::TestSubtreeOperations::test_push_single_subtree -v -s)",
+      "Bash(python -m pytest tests/test_git_rp.py::TestSubtreeOperations::test_push_single_subtree -v)",
+      "Bash(python -m pytest tests/test_git_rp.py -v)"
     ],
     "deny": []
   }

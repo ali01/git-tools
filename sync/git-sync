@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 
 import argparse
+import subprocess
 import sys
 
-import util
+
+def run_command(*arg, shell=True):
+    """Run a shell command and return its output."""
+    stdout = subprocess.check_output(*arg, shell=shell, stderr=subprocess.STDOUT)
+    return stdout.decode('utf-8').strip()
+
 
 class Remote(object):
   def __init__(self, name):
-    remote_url = util.run_command("git config --get remote.%s.url" % name)
+    remote_url = run_command("git config --get remote.%s.url" % name)
     self.host, self.path = [ s for s in remote_url.split(':') ]
     self.name = name
 
@@ -15,8 +21,8 @@ class Remote(object):
     return "'%s' at %s:%s" % (self.name, self.host, self.path)
 
   def run_command(self, command, shell=True):
-    return util.run_command("ssh %s \"cd %s && %s\"" %
-                            (self.host, self.path, command), shell=shell)
+    return run_command("ssh %s \"cd %s && %s\"" %
+                       (self.host, self.path, command), shell=shell)
 
 
 def parse_command_line():
@@ -34,7 +40,7 @@ def main(argv):
 
   for remote_name in args.remotes:
     remote = Remote(remote_name)
-    branch = util.run_command("git rev-parse --abbrev-ref HEAD")
+    branch = run_command("git rev-parse --abbrev-ref HEAD")
 
     if branch == 'master':
       print("Cannot synchronize master branch.", file=sys.stderr)
@@ -43,8 +49,8 @@ def main(argv):
     print("Synchronizing local branch '%s' onto remote %s." % (branch, remote))
 
     remote.run_command("git co HEAD@{0}")
-    print(util.run_command("git push --force %s %s:%s" %
-                           (remote_name, branch, branch)))
+    print(run_command("git push --force %s %s:%s" %
+                       (remote_name, branch, branch)))
     remote.run_command("git co %s" % branch)
 
     if args.command:

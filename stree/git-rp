@@ -53,7 +53,11 @@ import re
 import subprocess
 import sys
 
-import util
+
+def run_command(*arg, shell=True):
+    """Run a shell command and return its output."""
+    stdout = subprocess.check_output(*arg, shell=shell, stderr=subprocess.STDOUT)
+    return stdout.decode('utf-8').strip()
 
 
 def parse_command_line():
@@ -68,13 +72,13 @@ def parse_command_line():
 
 
 def get_current_branch():
-    return util.run_command("git rev-parse --abbrev-ref HEAD")
+    return run_command("git rev-parse --abbrev-ref HEAD")
 
 
 def get_subtrees_from_config():
     """Parse .git/config to find all subtree configurations"""
     try:
-        git_dir = util.run_command("git rev-parse --git-dir")
+        git_dir = run_command("git rev-parse --git-dir")
         config_path = os.path.join(git_dir, "config")
     except subprocess.CalledProcessError:
         print("Error: Not in a git repository", file=sys.stderr)
@@ -114,6 +118,8 @@ def push_main_repo(branch, force=False, dry_run=False, cwd=None):
 
 def get_nested_subtrees(parent_path, cwd):
     """Check if a subtree has its own nested subtrees"""
+    if cwd is None:
+        cwd = os.getcwd()
     subtree_git_dir = os.path.join(cwd, parent_path, '.git')
     
     # Check if this subtree has its own .git directory
@@ -208,6 +214,8 @@ def push_nested_subtree(nested, parent_subtree, branch, force=False, dry_run=Fal
     print(f"\n{indent}Pushing nested subtree '{relative_path}' within '{parent_subtree['path']}' to {url} (branch: {nested_branch})...")
     
     # We need to work within the parent subtree's repository
+    if cwd is None:
+        cwd = os.getcwd()
     parent_path = os.path.join(cwd, parent_subtree['path'])
     
     if force:
@@ -253,7 +261,7 @@ def main(argv):
     
     # Get repository root for git subtree commands
     try:
-        repo_root = util.run_command("git rev-parse --show-toplevel")
+        repo_root = run_command("git rev-parse --show-toplevel")
     except subprocess.CalledProcessError:
         print("Error: Not in a git repository", file=sys.stderr)
         return 1
